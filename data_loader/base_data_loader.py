@@ -1,14 +1,23 @@
 import numpy as np
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.dataloader import default_collate
 from torch.utils.data.sampler import SubsetRandomSampler
 
+class BaseDataset(Dataset):
+
+    def __init__(self, data) -> None:
+        super(BaseDataset, self).__init__()
+        self.data = data
+
+    def __getitem__(self, idx):
+        pass
 
 class BaseDataLoader(DataLoader):
     """
     Base class for all data loaders
     """
     def __init__(self, dataset, batch_size, shuffle, validation_split, num_workers, collate_fn=default_collate):
+        ''' Use validation split to check whether to generate validation dataset '''
         self.validation_split = validation_split
         self.shuffle = shuffle
 

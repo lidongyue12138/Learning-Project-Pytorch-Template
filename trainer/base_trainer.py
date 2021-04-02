@@ -1,21 +1,31 @@
-import torch
 from abc import abstractmethod
+
+import numpy as np
+import torch
 from numpy import inf
-from logger import TensorboardWriter
+from utils import MetricTracker, inf_loop
 
 
 class BaseTrainer:
     """
     Base class for all trainers
     """
-    def __init__(self, model, criterion, metric_ftns, optimizer, config):
+    def __init__(self, model, criterion, metric_ftns, optimizer, config,
+                 device,
+                 train_data_loader, 
+                 valid_data_loader=None,
+                 test_data_loader = None, 
+                 lr_scheduler=None, 
+                 len_epoch=None):
         self.config = config
         self.logger = config.get_logger('trainer', config['trainer']['verbosity'])
+        self.device = device
 
-        self.model = model
+        self.model = model.to(device)
         self.criterion = criterion
         self.metric_ftns = metric_ftns
         self.optimizer = optimizer
+        self.lr_scheduler = lr_scheduler
 
         cfg_trainer = config['trainer']
         self.epochs = cfg_trainer['epochs']
@@ -36,23 +46,93 @@ class BaseTrainer:
                 self.early_stop = inf
 
         self.start_epoch = 1
-
         self.checkpoint_dir = config.save_dir
 
-        # setup visualization writer instance                
-        self.writer = TensorboardWriter(config.log_dir, self.logger, cfg_trainer['tensorboard'])
+
+        self.train_data_loader = train_data_loader
+        self.valid_data_loader = valid_data_loader
+        self.test_data_loader = test_data_loader
+        self.do_validation = self.valid_data_loader is not None
+        self.log_step = int(np.sqrt(train_data_loader.batch_size))
+        self.len_epoch = len(self.train_data_loader)
+
+        self.train_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns])
+        self.valid_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns])
 
         if config.resume is not None:
             self._resume_checkpoint(config.resume)
 
-    @abstractmethod
     def _train_epoch(self, epoch):
         """
         Training logic for an epoch
 
-        :param epoch: Current epoch number
+        :param epoch: Integer, current training epoch.
+        :return: A log that contains average loss and metric in this epoch.
         """
-        raise NotImplementedError
+        self.model.train()
+        self.train_metrics.reset()
+        for batch_idx, (data, target) in enumerate(self.train_data_loader):
+            data, target = data.to(self.device), target.to(self.device)
+
+            self.optimizer.zero_grad()
+            output = self.model(data)
+            loss = self.criterion(output, target)
+            loss.backward()
+            self.optimizer.step()
+
+            self.train_metrics.update('loss', loss.item())
+            for met in self.metric_ftns:
+                self.train_metrics.update(met.__name__, met(output, target))
+
+            if batch_idx % self.log_step == 0:
+                self.logger.debug('Train Epoch: {} {} Loss: {:.6f}'.format(
+                    epoch,
+                    self._progress(batch_idx),
+                    loss.item()))
+
+            if batch_idx == self.len_epoch:
+                break
+        log = self.train_metrics.result()
+
+        if self.do_validation:
+            val_log = self._valid_epoch(epoch)
+            log.update(**{'val_'+k : v for k, v in val_log.items()})
+
+        if self.lr_scheduler is not None:
+            self.lr_scheduler.step()
+        return log
+
+    def _valid_epoch(self, epoch):
+        """
+        Validate after training an epoch
+
+        :param epoch: Integer, current training epoch.
+        :return: A log that contains information about validation
+        """
+        self.model.eval()
+        self.valid_metrics.reset()
+        with torch.no_grad():
+            for batch_idx, (data, target) in enumerate(self.valid_data_loader):
+                data, target = data.to(self.device), target.to(self.device)
+
+                output = self.model(data)
+                loss = self.criterion(output, target)
+
+                self.valid_metrics.update('loss', loss.item())
+                for met in self.metric_ftns:
+                    self.valid_metrics.update(met.__name__, met(output, target))
+
+        return self.valid_metrics.result()
+
+    def _progress(self, batch_idx):
+        base = '[{}/{} ({:.0f}%)]'
+        if hasattr(self.train_data_loader, 'n_samples'):
+            current = batch_idx * self.train_data_loader.batch_size
+            total = self.train_data_loader.n_samples
+        else:
+            current = batch_idx
+            total = self.len_epoch
+        return base.format(current, total, 100.0 * current / total)
 
     def train(self):
         """

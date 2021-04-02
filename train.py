@@ -11,12 +11,16 @@ from trainer import Trainer
 from utils import prepare_device
 
 
-# fix random seeds for reproducibility
-SEED = 123
-torch.manual_seed(SEED)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-np.random.seed(SEED)
+""" 
+TODO:
+    1. modify BaseTrainer: 
+        remove tensorboard features (keep it simple)
+        add test logic into BaseTrainer
+    2. modify BaseLoader:
+        we want to generate train_loader, valid_loader, test_loader at once in train.py 
+        ==> merge train.py and test.py 
+    3. Replace config with parse_known_args() 
+"""
 
 def main(config):
     logger = config.get_logger('train')
