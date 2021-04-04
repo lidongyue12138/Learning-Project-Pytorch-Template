@@ -1,12 +1,13 @@
 from abc import abstractmethod
 
+import os
 import numpy as np
 import torch
 from numpy import inf
 from utils import MetricTracker, inf_loop
 
 
-class BaseTrainer:
+class Trainer:
     """
     Base class for all trainers
     """
@@ -14,9 +15,8 @@ class BaseTrainer:
                  device,
                  train_data_loader, 
                  valid_data_loader=None,
-                 test_data_loader = None, 
-                 lr_scheduler=None, 
-                 len_epoch=None):
+                 test_data_loader=None, 
+                 lr_scheduler=None):
         self.config = config
         self.logger = config.get_logger('trainer', config['trainer']['verbosity'])
         self.device = device
@@ -59,8 +59,6 @@ class BaseTrainer:
         self.train_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns])
         self.valid_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns])
 
-        if config.resume is not None:
-            self._resume_checkpoint(config.resume)
 
     def _train_epoch(self, epoch):
         """
@@ -83,12 +81,6 @@ class BaseTrainer:
             self.train_metrics.update('loss', loss.item())
             for met in self.metric_ftns:
                 self.train_metrics.update(met.__name__, met(output, target))
-
-            if batch_idx % self.log_step == 0:
-                self.logger.debug('Train Epoch: {} {} Loss: {:.6f}'.format(
-                    epoch,
-                    self._progress(batch_idx),
-                    loss.item()))
 
             if batch_idx == self.len_epoch:
                 break
@@ -175,10 +167,37 @@ class BaseTrainer:
                                      "Training stops.".format(self.early_stop))
                     break
 
-            if epoch % self.save_period == 0:
-                self._save_checkpoint(epoch, save_best=best)
+            if best:
+                self._save_checkpoint(epoch)
 
-    def _save_checkpoint(self, epoch, save_best=False):
+    def test(self):
+        self.model.eval()
+
+        total_loss = 0.0
+        total_metrics = torch.zeros(len(self.metric_ftns))
+
+        with torch.no_grad():
+            for i, (data, target) in enumerate(self.test_data_loader):
+                data, target = data.to(self.device), target.to(self.device)
+                output = self.model(data)
+
+                # computing loss, metrics on test set
+                loss = self.criterion(output, target)
+                batch_size = data.shape[0]
+                total_loss += loss.item() * batch_size
+                for i, metric in enumerate(self.metric_ftns):
+                    total_metrics[i] += metric(output, target) * batch_size
+
+        n_samples = len(self.test_data_loader.sampler)
+        log = {'loss': total_loss / n_samples}
+        log.update({
+            met.__name__: total_metrics[i].item() / n_samples for i, met in enumerate(self.metric_ftns)
+        })
+        self.logger.info(log)
+
+        return log["accuracy"]
+
+    def _save_checkpoint(self, epoch):
         """
         Saving checkpoints
 
@@ -191,17 +210,20 @@ class BaseTrainer:
             'arch': arch,
             'epoch': epoch,
             'state_dict': self.model.state_dict(),
-            'optimizer': self.optimizer.state_dict(),
-            'monitor_best': self.mnt_best,
-            'config': self.config
         }
-        filename = str(self.checkpoint_dir / 'checkpoint-epoch{}.pth'.format(epoch))
-        torch.save(state, filename)
-        self.logger.info("Saving checkpoint: {} ...".format(filename))
-        if save_best:
-            best_path = str(self.checkpoint_dir / 'model_best.pth')
-            torch.save(state, best_path)
-            self.logger.info("Saving current best: model_best.pth ...")
+        self.logger.info("Best checkpoint in epoch {}".format(epoch))
+        
+        best_path = os.path.join(self.checkpoint_dir, 'model_best.pth')
+        torch.save(state, best_path)
+        self.logger.info("Saving current best: model_best.pth ...")
+
+    def load_best_model(self):
+        # Load the best model then test
+        arch = type(self.model).__name__
+        best_path = os.path.join(self.checkpoint_dir, 'model_best.pth')
+        state_dict  = torch.load(best_path, map_location=self.device)["state_dict"]
+        self.model.load_state_dict(state_dict)
+        return state_dict
 
     def _resume_checkpoint(self, resume_path):
         """

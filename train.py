@@ -14,20 +14,30 @@ from utils import prepare_device
 """ 
 TODO:
     1. modify BaseTrainer: 
-        remove tensorboard features (keep it simple)
-        add test logic into BaseTrainer
+        [checked] remove tensorboard features (keep it simple)
+        [checked] add test logic into BaseTrainer 
     2. modify BaseLoader:
         we want to generate train_loader, valid_loader, test_loader at once in train.py 
-        ==> merge train.py and test.py 
-    3. Replace config with parse_known_args() 
+        [checked] ==> merge train.py and test.py 
+    3. Replace config with parse_known_args(), ConfigParser
 """
 
 def main(config):
     logger = config.get_logger('train')
 
     # setup data_loader instances
-    data_loader = config.init_obj('data_loader', module_data)
-    valid_data_loader = data_loader.split_validation()
+    train_data_loader = config.init_obj('data_loader', module_data)
+    valid_data_loader = train_data_loader.split_validation()
+
+    # setup data_loader instances
+    test_data_loader = getattr(module_data, config['data_loader']['type'])(
+        config['data_loader']['args']['data_dir'],
+        batch_size=512,
+        shuffle=False,
+        validation_split=0.0,
+        training=False,
+        num_workers=2
+    )
 
     # build model architecture, then print to console
     model = config.init_obj('arch', module_arch)
@@ -51,11 +61,13 @@ def main(config):
     trainer = Trainer(model, criterion, metrics, optimizer,
                       config=config,
                       device=device,
-                      data_loader=data_loader,
+                      train_data_loader=train_data_loader,
                       valid_data_loader=valid_data_loader,
+                      test_data_loader=test_data_loader,
                       lr_scheduler=lr_scheduler)
 
     trainer.train()
+    trainer.test()
 
 
 if __name__ == '__main__':
