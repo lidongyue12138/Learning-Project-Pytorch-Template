@@ -171,6 +171,10 @@ class Trainer:
                 self._save_checkpoint(epoch)
 
     def test(self):
+        best_path = os.path.join(self.checkpoint_dir, f'model_best.pth')
+        if os.path.exists(best_path):
+            self.model.load_state_dict(torch.load(best_path, map_location=self.device)["state_dict"])
+
         self.model.eval()
 
         total_loss = 0.0
@@ -225,6 +229,7 @@ class Trainer:
         self.model.load_state_dict(state_dict)
         return state_dict
 
+    # not in use
     def _resume_checkpoint(self, resume_path):
         """
         Resume from saved checkpoints
