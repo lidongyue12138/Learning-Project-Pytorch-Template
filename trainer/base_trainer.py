@@ -16,7 +16,8 @@ class Trainer:
                  train_data_loader, 
                  valid_data_loader=None,
                  test_data_loader=None, 
-                 lr_scheduler=None):
+                 lr_scheduler=None,
+                 checkpoint_dir=None):
         self.config = config
         self.logger = config.get_logger('trainer', config['trainer']['verbosity'])
         self.device = device
@@ -46,8 +47,14 @@ class Trainer:
                 self.early_stop = inf
 
         self.start_epoch = 1
-        self.checkpoint_dir = config.save_dir
-
+        self.checkpoint_dir = checkpoint_dir
+        if checkpoint_dir is None:
+            self.checkpoint_dir = config.save_dir
+        if not os.path.exists(self.checkpoint_dir):
+            os.mkdir(self.checkpoint_dir)
+        else:
+            for filename in os.listdir(self.checkpoint_dir):
+                os.remove(os.path.join(self.checkpoint_dir, filename))
 
         self.train_data_loader = train_data_loader
         self.valid_data_loader = valid_data_loader

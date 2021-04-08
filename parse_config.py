@@ -33,11 +33,11 @@ class ConfigParser:
 
         # make directory for saving checkpoints and log.
         exist_ok = run_id == ''
-        self.save_dir.mkdir(parents=True, exist_ok=exist_ok)
+        # self.save_dir.mkdir(parents=True, exist_ok=exist_ok)
         self.log_dir.mkdir(parents=True, exist_ok=exist_ok)
 
-        # save updated config file to the checkpoint dir
-        write_json(self.config, self.save_dir / 'config.json')
+        # # save updated config file to the checkpoint dir
+        # write_json(self.config, self.save_dir / 'config.json')
 
         # configure logging module
         setup_logging(self.log_dir)
@@ -110,6 +110,9 @@ class ConfigParser:
     def __getitem__(self, name):
         """Access items like ordinary dict."""
         return self.config[name]
+
+    def __str__(self):
+        return str(self.config)
 
     def get_logger(self, name, verbosity=2):
         msg_verbosity = 'verbosity option {} is invalid. Valid options are {}.'.format(verbosity, self.log_levels.keys())
