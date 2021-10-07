@@ -64,7 +64,9 @@ def main(config):
                       train_data_loader=train_data_loader,
                       valid_data_loader=valid_data_loader,
                       test_data_loader=test_data_loader,
-                      lr_scheduler=lr_scheduler)
+                      lr_scheduler=lr_scheduler,
+                      checkpoint_dir = "./checkpoints/example/" # Specify your checkpoint here "./checkpoints/xxx/"
+                      )
 
     trainer.train()
     trainer.test()
