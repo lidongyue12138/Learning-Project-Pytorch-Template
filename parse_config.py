@@ -75,7 +75,8 @@ class ConfigParser:
 
         # parse custom cli options into dictionary
         modification = {opt.target : getattr(args, _get_opt_name(opt.flags)) for opt in options}
-        return cls(config, resume, modification)
+        # Return args for extra arguments setting
+        return cls(config, resume, modification), args
 
     def init_obj(self, name, module, *args, **kwargs):
         """
